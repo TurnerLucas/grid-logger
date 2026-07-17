@@ -1,0 +1,240 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<meta name="theme-color" content="#0e1116">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Grid Logger">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icon-192.png">
+<title>Grid Logger</title>
+<style>
+  :root{
+    --bg:#0e1116; --panel:#171c24; --panel2:#1f2630; --line:#2b333f;
+    --ink:#eef2f6; --dim:#8a94a3; --amber:#ffb020; --amber-ink:#1a1204;
+    --green:#33d17a; --red:#ff5d5d; --r:14px;
+  }
+  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
+  html,body{margin:0; height:100%;}
+  body{background:var(--bg); color:var(--ink);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,system-ui,sans-serif;
+    display:flex; flex-direction:column; min-height:100dvh; overscroll-behavior:none;}
+  header{display:flex; align-items:baseline; justify-content:space-between; padding:10px 16px 6px; border-bottom:1px solid var(--line);}
+  header .title{font-weight:700; letter-spacing:.04em; font-size:14px; color:var(--dim); text-transform:uppercase;}
+  header .count{font-variant-numeric:tabular-nums; font-weight:700; font-size:14px; color:var(--amber);}
+  .coord{display:grid; grid-template-columns:repeat(3,1fr); gap:8px; padding:14px 16px 6px;}
+  .axis{background:var(--panel); border:1px solid var(--line); border-radius:var(--r); padding:8px 6px 10px; text-align:center;}
+  .axis .lab{font-size:12px; letter-spacing:.18em; color:var(--dim); font-weight:700;}
+  .axis .val{font-size:clamp(38px,14vw,64px); font-weight:800; line-height:1; font-variant-numeric:tabular-nums; margin-top:2px;}
+  .axis.z .val{color:var(--amber);}
+  .axis .zname{font-size:11px; color:var(--dim); height:12px; margin-top:2px;}
+  .steppers{display:flex; gap:6px; justify-content:center; margin-top:8px;}
+  .steppers button{width:40px; height:34px; border-radius:9px; border:1px solid var(--line); background:var(--panel2); color:var(--ink); font-size:20px; font-weight:700;}
+  .steppers button:active{background:#2c3542;}
+  .scanwrap{position:relative; margin:8px 16px 0; border-radius:var(--r); overflow:hidden; background:#000; border:1px solid var(--line);}
+  #cam{width:100%; display:block; aspect-ratio:4/3; object-fit:cover; background:#000;}
+  .scanwrap .reticle{position:absolute; inset:16% 10%; border:2px solid var(--amber); border-radius:10px; box-shadow:0 0 0 100vmax rgba(0,0,0,.18) inset; pointer-events:none;}
+  .scanwrap .hint{position:absolute; left:0; right:0; bottom:8px; text-align:center; color:#fff; font-size:12px; text-shadow:0 1px 3px #000;}
+  .camoff{display:flex; align-items:center; justify-content:center; aspect-ratio:4/3; color:var(--dim); font-size:14px; text-align:center; padding:20px;}
+  .controls{padding:10px 16px 4px; display:flex; flex-direction:column; gap:8px;}
+  .row{display:flex; gap:8px;}
+  .btn{flex:1; border-radius:12px; padding:15px 10px; font-size:16px; font-weight:700; background:var(--panel2); color:var(--ink); border:1px solid var(--line);}
+  .btn:active{filter:brightness(1.15);}
+  .btn.primary{background:var(--amber); color:var(--amber-ink); border-color:var(--amber); font-size:18px;}
+  .btn.ghost{background:transparent;}
+  .btn.wide{flex:2;}
+  .manual{display:flex; gap:8px;}
+  .manual input{flex:1; background:var(--panel); border:1px solid var(--line); color:var(--ink); border-radius:12px; padding:14px; font-size:17px; font-variant-numeric:tabular-nums;}
+  .manual input:focus{outline:2px solid var(--amber); border-color:var(--amber);}
+  .toast{position:fixed; left:50%; transform:translateX(-50%); bottom:calc(env(safe-area-inset-bottom,0) + 96px); background:var(--green); color:#04240f; padding:12px 18px; border-radius:12px; font-weight:800; font-size:15px; box-shadow:0 8px 30px rgba(0,0,0,.5); opacity:0; transition:opacity .15s,transform .15s; pointer-events:none; z-index:50; max-width:88vw; text-align:center;}
+  .toast.show{opacity:1; transform:translateX(-50%) translateY(-4px);}
+  .toast.warn{background:var(--amber); color:var(--amber-ink);}
+  .toast.err{background:var(--red); color:#2a0000;}
+  .logwrap{flex:1; overflow:auto; padding:6px 16px 12px; -webkit-overflow-scrolling:touch;}
+  .logrow{display:grid; grid-template-columns:1fr auto auto; align-items:center; gap:10px; padding:10px 12px; border:1px solid var(--line); border-radius:10px; margin-top:8px; background:var(--panel);}
+  .logrow.dup{border-color:var(--amber);}
+  .logrow .code{font-variant-numeric:tabular-nums; font-weight:600; font-size:15px; word-break:break-all;}
+  .logrow .pos{font-variant-numeric:tabular-nums; color:var(--amber); font-weight:700; font-size:14px; white-space:nowrap;}
+  .logrow .x{color:var(--dim); font-size:20px; padding:0 4px;}
+  .empty{color:var(--dim); text-align:center; padding:26px 10px; font-size:14px; line-height:1.5;}
+  footer{display:flex; gap:8px; padding:8px 16px calc(env(safe-area-inset-bottom,0) + 10px); border-top:1px solid var(--line); background:var(--bg);}
+  footer .btn{padding:13px 10px; font-size:14px;}
+  .sheet-bg{position:fixed; inset:0; background:rgba(0,0,0,.55); display:none; z-index:60;}
+  .sheet-bg.show{display:block;}
+  .sheet{position:fixed; left:0; right:0; bottom:0; z-index:61; background:var(--panel); border-top:1px solid var(--line); border-radius:18px 18px 0 0; padding:16px 16px calc(env(safe-area-inset-bottom,0) + 16px); transform:translateY(100%); transition:transform .2s; max-height:80dvh; overflow:auto;}
+  .sheet.show{transform:translateY(0);}
+  .sheet h3{margin:2px 0 12px; font-size:16px;}
+  .sheet label{display:flex; align-items:center; gap:10px; padding:12px 0; border-bottom:1px solid var(--line); font-size:15px;}
+  .sheet .grp{display:flex; gap:8px; margin:10px 0;}
+  .sheet .grp input{flex:1; background:var(--panel2); border:1px solid var(--line); color:var(--ink); border-radius:10px; padding:12px; font-size:16px;}
+  .switch{margin-left:auto; width:52px; height:30px; border-radius:16px; background:#3a444f; position:relative; border:none; flex:none;}
+  .switch::after{content:""; position:absolute; top:3px; left:3px; width:24px; height:24px; border-radius:50%; background:#fff; transition:left .15s;}
+  .switch.on{background:var(--green);}
+  .switch.on::after{left:25px;}
+  .muted{color:var(--dim); font-size:13px; line-height:1.5;}
+  .offline-badge{font-size:11px; color:var(--green); font-weight:700;}
+</style>
+</head>
+<body>
+<header>
+  <span class="title">Grid Logger <span class="offline-badge" id="offlineBadge"></span></span>
+  <span class="count" id="count">0 boxes</span>
+</header>
+
+<div class="coord">
+  <div class="axis x"><div class="lab">X</div><div class="val" id="vx">0</div><div class="zname"></div>
+    <div class="steppers"><button data-ax="x" data-d="-1">–</button><button data-ax="x" data-d="1">+</button></div></div>
+  <div class="axis y"><div class="lab">Y</div><div class="val" id="vy">0</div><div class="zname"></div>
+    <div class="steppers"><button data-ax="y" data-d="-1">–</button><button data-ax="y" data-d="1">+</button></div></div>
+  <div class="axis z"><div class="lab">Z</div><div class="val" id="vz">0</div><div class="zname" id="zname">bottom</div>
+    <div class="steppers"><button data-ax="z" data-d="-1">–</button><button data-ax="z" data-d="1">+</button></div></div>
+</div>
+
+<div class="scanwrap" id="scanwrap">
+  <div class="camoff" id="camoff">Camera off — tap “Start camera”, or use manual entry below.</div>
+  <video id="cam" playsinline muted style="display:none"></video>
+  <div class="reticle" id="reticle" style="display:none"></div>
+  <div class="hint" id="camhint" style="display:none">Center a barcode in the box</div>
+</div>
+
+<div class="controls">
+  <div class="row">
+    <button class="btn primary wide" id="camBtn">Start camera</button>
+    <button class="btn" id="newRowBtn">New row ⏎</button>
+  </div>
+  <div class="manual">
+    <input id="manualIn" inputmode="text" autocomplete="off" placeholder="Type / paste barcode" enterkeyhint="done">
+    <button class="btn primary" id="logBtn" style="flex:none; width:88px;">Log</button>
+  </div>
+</div>
+
+<div class="logwrap" id="logwrap">
+  <div class="empty" id="empty">No boxes logged yet.<br>Scan or type the first barcode — it lands at 0, 0, 0.</div>
+</div>
+
+<footer>
+  <button class="btn" id="undoBtn">Undo last</button>
+  <button class="btn" id="exportBtn">Export CSV</button>
+  <button class="btn ghost" id="menuBtn" style="flex:none; width:56px;">⚙</button>
+</footer>
+
+<div class="toast" id="toast"></div>
+
+<div class="sheet-bg" id="sheetBg"></div>
+<div class="sheet" id="sheet">
+  <h3>Settings</h3>
+  <label>Auto-advance after each log<button class="switch on" id="autoSw"></button></label>
+  <label>Warn on duplicate barcode<button class="switch on" id="dupSw"></button></label>
+  <label>Vibrate on log<button class="switch on" id="vibSw"></button></label>
+  <div class="muted" style="margin:14px 0 4px">Jump to a position</div>
+  <div class="grp">
+    <input id="jx" inputmode="numeric" placeholder="X"><input id="jy" inputmode="numeric" placeholder="Y"><input id="jz" inputmode="numeric" placeholder="Z">
+    <button class="btn primary" id="jumpBtn" style="flex:none; width:80px;">Go</button>
+  </div>
+  <div class="muted" style="margin-top:6px">Auto-advance walks Z 0→1→2 (bottom→top), then steps X by one. “New row” sets X to 0 and adds one to Y.</div>
+  <button class="btn" id="clearBtn" style="width:100%; margin-top:16px; color:var(--red); border-color:var(--red);">Clear all data</button>
+  <button class="btn ghost" id="closeSheet" style="width:100%; margin-top:8px;">Close</button>
+</div>
+
+<!-- Bundled scanner: ZXing UMD, embedded so the app works offline on iOS/Android alike -->
+<script src="zxing.js"></script>
+<script>
+"use strict";
+const ZMAX=2, ZN=["bottom","middle","top"], K="grid_logger_v1";
+let state={pos:{x:0,y:0,z:0}, log:[], auto:true, dup:true, vib:true};
+let lastScan={code:"",t:0};
+
+function save(){ try{localStorage.setItem(K,JSON.stringify(state));}catch(e){} }
+function load(){ try{const r=localStorage.getItem(K); if(r){const s=JSON.parse(r); if(s&&s.pos&&Array.isArray(s.log)) state=Object.assign(state,s);}}catch(e){} }
+const $=id=>document.getElementById(id);
+function clampPos(){ state.pos.z=Math.max(0,state.pos.z|0); state.pos.x=Math.max(0,state.pos.x|0); state.pos.y=Math.max(0,state.pos.y|0); }
+function renderPos(){ $("vx").textContent=state.pos.x; $("vy").textContent=state.pos.y; $("vz").textContent=state.pos.z; $("zname").textContent=ZN[state.pos.z]||("z"+state.pos.z); }
+function renderCount(){ $("count").textContent=state.log.length+(state.log.length===1?" box":" boxes"); }
+function escapeHtml(s){ return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function renderLog(){
+  const w=$("logwrap");
+  if(state.log.length===0){ w.innerHTML='<div class="empty">No boxes logged yet.<br>Scan or type the first barcode — it lands at 0, 0, 0.</div>'; return; }
+  const seen=new Map(); state.log.forEach(e=>seen.set(e.barcode,(seen.get(e.barcode)||0)+1));
+  w.innerHTML=state.log.slice().reverse().slice(0,60).map(e=>{
+    const dup=seen.get(e.barcode)>1?" dup":"";
+    return `<div class="logrow${dup}"><span class="code">${escapeHtml(e.barcode)}</span><span class="pos">${e.x}, ${e.y}, ${e.z}</span><span class="x">${dup?"⚠":""}</span></div>`;
+  }).join("")+(state.log.length>60?`<div class="empty">…and ${state.log.length-60} more (all in export)</div>`:"");
+}
+function renderAll(){ renderPos(); renderCount(); renderLog(); save(); }
+let toastT=null;
+function toast(m,k){ const t=$("toast"); t.textContent=m; t.className="toast show"+(k?(" "+k):""); clearTimeout(toastT); toastT=setTimeout(()=>t.className="toast",1400); }
+function buzz(p){ if(state.vib&&navigator.vibrate){try{navigator.vibrate(p);}catch(e){}} }
+
+function advance(){ if(state.pos.z<ZMAX) state.pos.z++; else {state.pos.z=0; state.pos.x++;} }
+function record(code){
+  code=(code||"").trim();
+  if(!code){ toast("No barcode","err"); return; }
+  if(state.dup && state.log.some(e=>e.barcode===code)){ buzz([40,60,40]); toast("Already logged: "+code,"warn"); }
+  const {x,y,z}=state.pos;
+  state.log.push({barcode:code,x,y,z,t:Date.now()});
+  buzz(35); toast("✓ "+code+"  →  "+x+", "+y+", "+z,"");
+  if(state.auto) advance();
+  clampPos(); renderAll();
+}
+function undo(){ if(!state.log.length){toast("Nothing to undo","warn");return;} const l=state.log.pop(); state.pos={x:l.x,y:l.y,z:l.z}; toast("Removed "+l.barcode,"warn"); renderAll(); }
+
+document.querySelectorAll(".steppers button").forEach(b=>b.addEventListener("click",()=>{ state.pos[b.dataset.ax]+=parseInt(b.dataset.d,10); clampPos(); renderPos(); save(); }));
+$("newRowBtn").addEventListener("click",()=>{ state.pos.y++; state.pos.x=0; state.pos.z=0; renderPos(); save(); toast("Row "+state.pos.y+" — back to X 0",""); });
+$("logBtn").addEventListener("click",()=>{ record($("manualIn").value); $("manualIn").value=""; });
+$("manualIn").addEventListener("keydown",e=>{ if(e.key==="Enter"){ record($("manualIn").value); $("manualIn").value=""; }});
+$("undoBtn").addEventListener("click",undo);
+
+/* ---- camera via ZXing (works on iOS WebKit + Android) ---- */
+let reader=null, scanning=false, coolUntil=0;
+async function startCam(){
+  if(!window.ZXingBrowser){ toast("Scanner not loaded — use manual entry","err"); return; }
+  try{
+    reader=reader||new ZXingBrowser.BrowserMultiFormatReader();
+    const v=$("cam");
+    await reader.decodeFromConstraints({video:{facingMode:"environment"}}, v, (result,err)=>{
+      if(result && Date.now()>coolUntil){
+        const code=result.getText();
+        coolUntil=Date.now()+900;
+        if(!(code===lastScan.code && Date.now()-lastScan.t<1200)){ lastScan={code,t:Date.now()}; record(code); }
+      }
+    });
+    v.style.display="block"; $("camoff").style.display="none"; $("reticle").style.display="block"; $("camhint").style.display="block";
+    $("camBtn").textContent="Stop camera"; scanning=true;
+  }catch(e){ toast("Camera blocked — allow camera in browser settings","err"); }
+}
+function stopCam(){ scanning=false; if(reader){try{reader.reset();}catch(e){}} const v=$("cam"); v.style.display="none"; $("camoff").style.display="flex"; $("reticle").style.display="none"; $("camhint").style.display="none"; $("camBtn").textContent="Start camera"; }
+$("camBtn").addEventListener("click",()=>{ scanning?stopCam():startCam(); });
+
+$("exportBtn").addEventListener("click",()=>{
+  if(!state.log.length){ toast("Nothing to export yet","warn"); return; }
+  const head="barcode,x,y,z,logged_at\n";
+  const body=state.log.map(e=>['"'+String(e.barcode).replace(/"/g,'""')+'"',e.x,e.y,e.z,new Date(e.t).toISOString()].join(",")).join("\n");
+  const blob=new Blob([head+body],{type:"text/csv"}), url=URL.createObjectURL(blob), a=document.createElement("a");
+  a.href=url; a.download="box_grid_"+new Date().toISOString().slice(0,16).replace(/[:T]/g,"-")+".csv"; document.body.appendChild(a); a.click();
+  setTimeout(()=>{URL.revokeObjectURL(url);a.remove();},500); toast("Exported "+state.log.length+" rows","");
+});
+
+function openSheet(){ $("sheetBg").classList.add("show"); $("sheet").classList.add("show"); syncSw(); }
+function closeSheet(){ $("sheetBg").classList.remove("show"); $("sheet").classList.remove("show"); }
+function syncSw(){ $("autoSw").classList.toggle("on",state.auto); $("dupSw").classList.toggle("on",state.dup); $("vibSw").classList.toggle("on",state.vib); }
+$("menuBtn").addEventListener("click",openSheet); $("closeSheet").addEventListener("click",closeSheet); $("sheetBg").addEventListener("click",closeSheet);
+$("autoSw").addEventListener("click",()=>{state.auto=!state.auto;syncSw();save();});
+$("dupSw").addEventListener("click",()=>{state.dup=!state.dup;syncSw();save();});
+$("vibSw").addEventListener("click",()=>{state.vib=!state.vib;syncSw();save();});
+$("jumpBtn").addEventListener("click",()=>{ const gx=parseInt($("jx").value,10),gy=parseInt($("jy").value,10),gz=parseInt($("jz").value,10);
+  if(!isNaN(gx))state.pos.x=Math.max(0,gx); if(!isNaN(gy))state.pos.y=Math.max(0,gy); if(!isNaN(gz))state.pos.z=Math.max(0,gz);
+  renderPos(); save(); closeSheet(); toast("Jumped to "+state.pos.x+", "+state.pos.y+", "+state.pos.z,""); });
+$("clearBtn").addEventListener("click",()=>{ if(confirm("Delete all "+state.log.length+" boxes and reset to 0,0,0? Export first if you need them.")){ state.log=[]; state.pos={x:0,y:0,z:0}; renderAll(); closeSheet(); toast("Cleared","warn"); }});
+
+load(); clampPos(); renderAll();
+window.addEventListener("beforeunload",save);
+
+/* ---- service worker for offline-after-first-load ---- */
+if("serviceWorker" in navigator){
+  navigator.serviceWorker.register("sw.js").then(()=>{ $("offlineBadge").textContent="• offline-ready"; }).catch(()=>{});
+}
+</script>
+</body>
+</html>
